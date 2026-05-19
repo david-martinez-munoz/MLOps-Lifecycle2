@@ -11,7 +11,7 @@
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
       "id": 100,
-      "title": "🚨 ALERTA DE DEGRADACIÓN — v0.0.1 vs v0.0.2",
+      "title": "🚨 ALERTA DE DEGRADACIÓN — v0.0.1 vs v0.0.5",
       "type": "row"
     },
 
@@ -49,7 +49,7 @@
 
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Accuracy de v0.0.2. Si es ROJO, el fine-tuning degradó el modelo. Vuelve a v0.0.1 desde el Frontend.",
+      "description": "Accuracy de v0.0.5. Si es ROJO, el fine-tuning degradó el modelo. Vuelve a v0.0.1 desde el Frontend.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -74,14 +74,14 @@
         "justifyMode": "center", "textMode": "auto",
         "reduceOptions": { "calcs": ["lastNotNull"] }
       },
-      "targets": [{ "expr": "sentiment_prediction_accuracy_average{version=\"v0.0.2\"}", "legendFormat": "v0.0.2", "refId": "A" }],
-      "title": "Accuracy  v0.0.2  (Fine-Tuned)",
+      "targets": [{ "expr": "sentiment_prediction_accuracy_average{version=\"v0.0.5\"}", "legendFormat": "v0.0.5", "refId": "A" }],
+      "title": "Accuracy  v0.0.5  (Fine-Tuned)",
       "type": "stat"
     },
 
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Δ = v0.0.2 − v0.0.1. Negativo = v0.0.2 está peor. ROJO = degradación confirmada → usa el Frontend para volver a v0.0.1.",
+      "description": "Δ = v0.0.5 − v0.0.1. Negativo = v0.0.5 está peor. ROJO = degradación confirmada → usa el Frontend para volver a v0.0.1.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -103,11 +103,11 @@
         "reduceOptions": { "calcs": ["lastNotNull"] }
       },
       "targets": [{
-        "expr": "sentiment_prediction_accuracy_average{version=\"v0.0.2\"} - ignoring(version) sentiment_prediction_accuracy_average{version=\"v0.0.1\"}",
+        "expr": "sentiment_prediction_accuracy_average{version=\"v0.0.5\"} - ignoring(version) sentiment_prediction_accuracy_average{version=\"v0.0.1\"}",
         "legendFormat": "Δ Accuracy (v2 − v1)",
         "refId": "A"
       }],
-      "title": "⚡ Delta  (v0.0.2 − v0.0.1)",
+      "title": "⚡ Delta  (v0.0.5 − v0.0.1)",
       "type": "stat"
     },
 
@@ -135,7 +135,7 @@
       },
       "targets": [
         { "expr": "sentiment_prediction_accuracy_average{version=\"v0.0.1\"}", "legendFormat": "v0.0.1 — Baseline (alta accuracy)", "refId": "A" },
-        { "expr": "sentiment_prediction_accuracy_average{version=\"v0.0.2\"}", "legendFormat": "v0.0.2 — Fine-Tuned (puede estar degradado)", "refId": "B" }
+        { "expr": "sentiment_prediction_accuracy_average{version=\"v0.0.5\"}", "legendFormat": "v0.0.5 — Fine-Tuned (puede estar degradado)", "refId": "B" }
       ],
       "title": "📈 Accuracy en Tiempo Real por Versión",
       "type": "timeseries"

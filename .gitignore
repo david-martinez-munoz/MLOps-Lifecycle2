@@ -30,3 +30,5 @@ mlartifacts/
 # OS
 .DS_Store
 Thumbs.db
+models/*/
+models/.tmp_*/
