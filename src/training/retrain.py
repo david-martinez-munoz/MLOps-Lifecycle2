@@ -2,19 +2,15 @@
 MLOps-Lifecycle — Continuous Training Pipeline
 ================================================
 Ejecutado por GitHub Actions en cada push a `develop`.
-
 Flujo:
-  1. Carga data/new_train_data.csv (etiquetas sesgadas → degradación real en v0.0.2).
-  2. Fine-tuning de 1 época sobre DistilBERT SST-2.
+  1. Carga data/new_train_data.csv (etiquetas sesgadas => degradacion real en v0.0.2).
+  2. Fine-tuning de 3 epocas sobre DistilBERT base (SIN fine-tuning previo de sentimiento).
   3. Guarda los pesos como .safetensors en models/{version}/.
-  4. (Opcional) Registra métricas en MLflow si MLFLOW_TRACKING_URI está definido.
-  5. Escribe models/{version}.json con la URL de descarga (la rellena el CI después).
-
-El script NO sube nada a GitHub — eso lo hace el workflow YAML con `gh release`.
+  4. (Opcional) Registra metricas en MLflow si MLFLOW_TRACKING_URI esta definido.
+  5. Escribe models/{version}.json con la URL de descarga (la rellena el CI despues).
+El script NO sube nada a GitHub - eso lo hace el workflow YAML con `gh release`.
 """
-
 from __future__ import annotations
-
 import json
 import logging
 import os
@@ -22,7 +18,6 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
-
 import numpy as np
 import pandas as pd
 import torch
@@ -36,12 +31,12 @@ from transformers import (
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
     stream=sys.stdout,
 )
 logger = logging.getLogger("retrain")
 
-# ── Configuración desde variables de entorno ────────────────────────────────
+# -- Configuracion desde variables de entorno --
 BASE_MODEL_NAME: str = os.getenv(
     "MODEL_NAME", "distilbert-base-uncased"
 )
@@ -51,12 +46,10 @@ DATA_PATH: Path = Path(os.getenv("TRAIN_DATA_PATH", "data/new_train_data.csv"))
 NUM_TRAIN_EPOCHS: int = int(os.getenv("NUM_TRAIN_EPOCHS", "3"))
 BATCH_SIZE: int = int(os.getenv("BATCH_SIZE", "8"))
 MAX_SEQ_LEN: int = int(os.getenv("MAX_SEQ_LEN", "128"))
-
 OUTPUT_DIR: Path = MODEL_ROOT / TARGET_VERSION
 
 
-# ── Dataset PyTorch ─────────────────────────────────────────────────────────
-
+# -- Dataset PyTorch --
 class SentimentDataset(torch.utils.data.Dataset):
     def __init__(self, encodings: dict[str, torch.Tensor], labels: list[int]) -> None:
         self.encodings = encodings
@@ -75,7 +68,7 @@ def _load_dataset(tokenizer: AutoTokenizer) -> SentimentDataset:
     if not DATA_PATH.exists():
         raise FileNotFoundError(
             f"Dataset no encontrado: {DATA_PATH}\n"
-            "Asegúrate de que data/new_train_data.csv esté en el repositorio."
+            "Asegurate de que data/new_train_data.csv este en el repositorio."
         )
     df = pd.read_csv(DATA_PATH)
     texts = df["text"].astype(str).tolist()
@@ -97,13 +90,12 @@ def _compute_metrics(eval_pred: Any) -> dict[str, float]:
     return {"accuracy": float(accuracy_score(labels, preds))}
 
 
-# ── MLflow (opcional) ────────────────────────────────────────────────────────
-
+# -- MLflow (opcional) --
 def _try_mlflow_log(run_metrics: dict[str, Any], output_dir: Path) -> None:
-    """Registra en MLflow solo si MLFLOW_TRACKING_URI está configurado."""
+    """Registra en MLflow solo si MLFLOW_TRACKING_URI esta configurado."""
     tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "")
     if not tracking_uri:
-        logger.info("MLFLOW_TRACKING_URI no definido — omitiendo tracking MLflow.")
+        logger.info("MLFLOW_TRACKING_URI no definido - omitiendo tracking MLflow.")
         return
     try:
         import mlflow
@@ -122,7 +114,6 @@ def _try_mlflow_log(run_metrics: dict[str, Any], output_dir: Path) -> None:
                 if isinstance(v, (int, float)):
                     mlflow.log_metric(k, v)
             mlflow.log_artifacts(str(output_dir), artifact_path="model_files")
-            # Registrar en Model Registry con alias de versión
             run_id = mlflow.active_run().info.run_id
             model_uri = f"runs:/{run_id}/model_files"
             mv = mlflow.register_model(model_uri, os.getenv("MLFLOW_MODEL_NAME", "sentiment-model"))
@@ -132,17 +123,16 @@ def _try_mlflow_log(run_metrics: dict[str, Any], output_dir: Path) -> None:
                 TARGET_VERSION,
                 mv.version,
             )
-            logger.info("MLflow: modelo registrado como '%s@%s'", "sentiment-model", TARGET_VERSION)
+            logger.info("MLflow: modelo registrado como 'sentiment-model@%s'", TARGET_VERSION)
     except Exception as exc:
-        logger.warning("MLflow tracking falló (no crítico): %s", exc)
+        logger.warning("MLflow tracking fallo (no critico): %s", exc)
 
 
-# ── Pipeline principal ───────────────────────────────────────────────────────
-
+# -- Pipeline principal --
 def main() -> None:
     logger.info("=" * 60)
     logger.info("Iniciando Continuous Training Pipeline")
-    logger.info("  Versión : %s", TARGET_VERSION)
+    logger.info("  Version : %s", TARGET_VERSION)
     logger.info("  Modelo  : %s", BASE_MODEL_NAME)
     logger.info("  Dataset : %s", DATA_PATH)
     logger.info("=" * 60)
@@ -153,47 +143,45 @@ def main() -> None:
     logger.info("Descargando modelo base desde HuggingFace...")
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_NAME)
     model = AutoModelForSequenceClassification.from_pretrained(
-    BASE_MODEL_NAME, num_labels=2,
-)
-
+        BASE_MODEL_NAME,
+        num_labels=2,
+    )
 
     # 2. Preparar dataset de fine-tuning
     train_dataset = _load_dataset(tokenizer)
 
-    # 3. Fine-tuning con HuggingFace Trainer — 1 época
+    # 3. Fine-tuning con HuggingFace Trainer - 3 epocas con lr alto para degradacion
     training_args = TrainingArguments(
-    output_dir=str(OUTPUT_DIR),
-    num_train_epochs=NUM_TRAIN_EPOCHS,
-    per_device_train_batch_size=BATCH_SIZE,
-    learning_rate=5e-4,          # ← AÑADIR ESTA LÍNEA
-    save_strategy="no",
-    logging_strategy="epoch",
-    report_to="none",
-    use_cpu=not torch.cuda.is_available(),
-    dataloader_num_workers=0,
-)
+        output_dir=str(OUTPUT_DIR),
+        num_train_epochs=NUM_TRAIN_EPOCHS,
+        per_device_train_batch_size=BATCH_SIZE,
+        learning_rate=5e-4,
+        save_strategy="no",
+        logging_strategy="epoch",
+        report_to="none",
+        use_cpu=not torch.cuda.is_available(),
+        dataloader_num_workers=0,
+    )
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         compute_metrics=_compute_metrics,
     )
-
-    logger.info("Iniciando fine-tuning (%d época)...", NUM_TRAIN_EPOCHS)
+    logger.info("Iniciando fine-tuning (%d epocas, lr=5e-4)...", NUM_TRAIN_EPOCHS)
     result = trainer.train()
     train_loss = result.training_loss
-    logger.info("Fine-tuning completado — Loss: %.4f", train_loss)
+    logger.info("Fine-tuning completado - Loss: %.4f", train_loss)
 
     # 4. Guardar tokenizador + pesos en safetensors
     logger.info("Guardando artefactos en %s ...", OUTPUT_DIR)
     tokenizer.save_pretrained(OUTPUT_DIR)
     model.save_pretrained(OUTPUT_DIR, safe_serialization=True)
-
     assert (OUTPUT_DIR / "model.safetensors").exists(), "ERROR: model.safetensors no generado"
     assert (OUTPUT_DIR / "config.json").exists(), "ERROR: config.json no generado"
     logger.info("Artefactos guardados correctamente.")
 
-    # 5. Escribir puntero JSON (el CI rellenará download_url después de crear el Release)
+    # 5. Escribir puntero JSON
     pointer: dict[str, Any] = {
         "version": TARGET_VERSION,
         "base_model": BASE_MODEL_NAME,
@@ -202,11 +190,11 @@ def main() -> None:
         "training_samples": len(train_dataset),
         "train_loss": round(train_loss, 4),
         "created_at": int(time.time()),
-        # download_url se rellena por el workflow YAML después de `gh release upload`
         "download_url": "",
         "note": (
-            "Fine-tuning incremental de 1 época sobre new_train_data.csv. "
-            "Los pesos (.safetensors) están en GitHub Releases. "
+            "Fine-tuning de 3 epocas sobre distilbert-base-uncased con datos sesgados. "
+            "Modelo degradado intencionalmente para demo MLOps. "
+            "Los pesos (.safetensors) estan en GitHub Releases. "
             "Este JSON es el puntero ligero que vive en Git."
         ),
     }
@@ -224,7 +212,7 @@ def main() -> None:
     _try_mlflow_log(run_metrics, OUTPUT_DIR)
 
     logger.info("=" * 60)
-    logger.info("Pipeline completado con éxito → %s", TARGET_VERSION)
+    logger.info("Pipeline completado con exito => %s", TARGET_VERSION)
     logger.info("=" * 60)
 
 
