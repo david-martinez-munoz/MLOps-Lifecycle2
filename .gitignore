@@ -1,0 +1,32 @@
+# Dependencias Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+
+# Pesos del modelo — NO se suben a git (van a GitHub Releases / MLflow)
+models/*/model.safetensors
+models/*/model-*.safetensors
+models/*/model.safetensors.index.json
+
+# MLflow local
+mlruns/
+mlartifacts/
+
+# DVC (legacy — sustituido por GitHub Releases)
+.dvc/cache/
+.dvc/tmp/
+
+# Docker
+*.dockerignore
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

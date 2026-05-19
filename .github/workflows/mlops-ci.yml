@@ -1,0 +1,209 @@
+# ============================================================
+# MLOps-Lifecycle — Continuous Training Pipeline
+# ============================================================
+# Disparado en cada push a `develop`.
+#
+# Flujo completo:
+#   1. Calcula la siguiente versión semántica (v0.0.1 → v0.0.2 → v0.0.3 …)
+#   2. Instala dependencias (transformers, torch, mlflow…)
+#   3. Ejecuta retrain.py → fine-tuning REAL de 1 época
+#   4. Crea GitHub Release con el tag semántico
+#   5. Sube model.safetensors como asset del Release (los "pesos")
+#   6. Actualiza models/{version}.json con la URL de descarga
+#   7. Commitea el JSON ligero (puntero) a Git — NUNCA los pesos
+#   8. Pushea el tag al repositorio
+#
+# SECRETS REQUERIDOS en GitHub → Settings → Secrets → Actions:
+#   ┌─────────────────────────────────────────────────────────┐
+#   │  NINGUNO obligatorio — GITHUB_TOKEN es automático       │
+#   │  Opcionales (para MLflow/DagsHub tracking):             │
+#   │    MLFLOW_TRACKING_URI                                  │
+#   │    DAGSHUB_USERNAME                                     │
+#   │    DAGSHUB_TOKEN                                        │
+#   └─────────────────────────────────────────────────────────┘
+# ============================================================
+
+name: MLOps Continuous Training
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+    inputs:
+      force_version:
+        description: "Forzar versión (ej: v0.0.3). Vacío = auto-incremento."
+        required: false
+        default: ""
+
+permissions:
+  contents: write   # necesario para crear Releases y commitear el puntero JSON
+
+jobs:
+  continuous-training:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60   # fine-tuning CPU en GitHub ~10-20 min
+
+    env:
+      MODEL_NAME: distilbert-base-uncased-finetuned-sst-2-english
+      MODEL_ROOT: models
+      TRAIN_DATA_PATH: data/new_train_data.csv
+      NUM_TRAIN_EPOCHS: "1"
+      BATCH_SIZE: "8"
+      MAX_SEQ_LEN: "128"
+      # MLflow opcional (se ignora si está vacío)
+      MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+      MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+      MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+
+    steps:
+
+      # ── 1. Checkout con historial completo (para leer tags) ───────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 2. Python 3.11 ────────────────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # ── 3. Instalar dependencias ──────────────────────────────────────────
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r src/training/requirements.txt
+
+      # ── 4. Validar sintaxis Python ────────────────────────────────────────
+      - name: Validate Python syntax
+        run: |
+          python -m compileall src/api src/wrapper src/seeder src/training
+
+      # ── 5. Calcular la siguiente versión semántica ────────────────────────
+      - name: Compute next semantic version
+        id: versioning
+        run: |
+          FORCED="${{ github.event.inputs.force_version }}"
+          if [ -n "$FORCED" ]; then
+            echo "Versión forzada: $FORCED"
+            echo "TARGET_VERSION=$FORCED" >> "$GITHUB_ENV"
+            echo "version=$FORCED"        >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' \
+                   | sort -t. -k1,1V -k2,2n -k3,3n \
+                   | tail -1)
+          [ -z "$LATEST" ] && LATEST="v0.0.0"
+
+          MAJOR=$(echo "$LATEST" | cut -d. -f1 | tr -d 'v')
+          MINOR=$(echo "$LATEST" | cut -d. -f2)
+          PATCH=$(echo "$LATEST" | cut -d. -f3)
+          NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+
+          echo "Versión: $LATEST → $NEXT"
+          echo "TARGET_VERSION=$NEXT" >> "$GITHUB_ENV"
+          echo "version=$NEXT"        >> "$GITHUB_OUTPUT"
+
+      # ── 6. Fine-tuning real ───────────────────────────────────────────────
+      - name: Run fine-tuning pipeline
+        run: |
+          echo "Entrenando versión $TARGET_VERSION ..."
+          python src/training/retrain.py
+
+      # ── 7. Verificar artefactos generados ─────────────────────────────────
+      - name: Verify artifacts
+        run: |
+          ls -lh "models/${TARGET_VERSION}/"
+          [ -f "models/${TARGET_VERSION}/model.safetensors" ] || (echo "ERROR: falta model.safetensors" && exit 1)
+          [ -f "models/${TARGET_VERSION}.json" ]              || (echo "ERROR: falta puntero JSON"       && exit 1)
+          echo "Artefactos verificados OK"
+
+      # ── 8. Crear GitHub Release y subir los pesos ─────────────────────────
+      - name: Create GitHub Release and upload weights
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Crear el Release con el tag semántico
+          gh release create "${TARGET_VERSION}" \
+            --title "Model ${TARGET_VERSION}" \
+            --notes "Fine-tuned DistilBERT SST-2 — versión ${TARGET_VERSION}.
+          
+          Dataset: \`data/new_train_data.csv\`
+          Épocas: 1
+          
+          Para cargar en caliente desde el Frontend: selecciona '${TARGET_VERSION}' en el desplegable de versión." \
+            --target develop \
+            || echo "Release ya existe, actualizando asset..."
+
+          # Subir model.safetensors como asset del Release
+          gh release upload "${TARGET_VERSION}" \
+            "models/${TARGET_VERSION}/model.safetensors" \
+            --clobber
+
+          echo "Release creado: https://github.com/${{ github.repository }}/releases/tag/${TARGET_VERSION}"
+
+      # ── 9. Actualizar el puntero JSON con la URL de descarga ──────────────
+      - name: Update version pointer with download URL
+        run: |
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${TARGET_VERSION}/model.safetensors"
+
+          python3 - << PYEOF
+          import json, os
+          version = os.environ["TARGET_VERSION"]
+          path = f"models/{version}.json"
+          with open(path) as f:
+              data = json.load(f)
+          data["download_url"] = "${DOWNLOAD_URL}"
+          with open(path, "w") as f:
+              json.dump(data, f, indent=2)
+          print(f"Puntero actualizado: {path}")
+          print(f"  download_url = {data['download_url']}")
+          PYEOF
+
+      # ── 10. Commit del puntero JSON (NUNCA los pesos) ─────────────────────
+      - name: Commit lightweight pointer to Git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Solo el JSON ligero — los pesos están en GitHub Releases
+          git add "models/${TARGET_VERSION}.json"
+
+          git diff --cached --quiet \
+            && echo "Sin cambios en el puntero." \
+            && exit 0
+
+          git commit -m "ci(model): register ${TARGET_VERSION} weights in GitHub Releases [skip ci]"
+          git push origin develop
+
+      # ── 11. Push del tag semántico ─────────────────────────────────────────
+      - name: Push semantic version tag
+        run: |
+          git tag "${TARGET_VERSION}" --force
+          git push origin "${TARGET_VERSION}" --force
+
+      # ── 12. Resumen en la UI de GitHub Actions ────────────────────────────
+      - name: Job summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << SUMMARY
+          ## ✅ Continuous Training completado
+
+          | Campo | Valor |
+          |-------|-------|
+          | Versión publicada | \`${TARGET_VERSION}\` |
+          | Modelo base | \`${MODEL_NAME}\` |
+          | Épocas | ${NUM_TRAIN_EPOCHS} |
+          | Dataset | \`${TRAIN_DATA_PATH}\` |
+          | Pesos en | [GitHub Releases](https://github.com/${{ github.repository }}/releases/tag/${TARGET_VERSION}) |
+
+          La API puede cargar esta versión con:
+          \`\`\`json
+          POST /version/change
+          { "version": "${TARGET_VERSION}" }
+          \`\`\`
+          SUMMARY

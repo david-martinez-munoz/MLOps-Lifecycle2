@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+transformers[torch]
+torch
+safetensors
+prometheus-fastapi-instrumentator
+prometheus-client
+httpx
+mlflow

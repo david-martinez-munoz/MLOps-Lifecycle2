@@ -1,0 +1,9 @@
+torch
+transformers[torch]
+safetensors
+datasets
+pandas
+scikit-learn
+accelerate
+numpy
+mlflow

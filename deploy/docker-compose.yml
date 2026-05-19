@@ -1,0 +1,124 @@
+# ============================================================
+# MLOps-Lifecycle — Stack Docker Compose
+# ============================================================
+# Servicios:
+#   api        → FastAPI :8000  (/predict, /version/change, /metrics)
+#   frontend   → Streamlit :8501  (FRONT → WRAPPER → API → MODELO)
+#   seeder     → Generador de tráfico (envía expected_label para accuracy real)
+#   prometheus → Scraping de métricas :9090
+#   grafana    → Dashboard vivo con alerta de degradación :3000
+#
+# Uso rápido:
+#   docker compose -f deploy/docker-compose.yml up --build
+#
+# Credenciales Grafana por defecto: admin / admin
+# ============================================================
+
+services:
+
+  # ── API FastAPI ────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ..
+      dockerfile: src/api/Dockerfile
+    container_name: mlops-lifecycle-api
+    environment:
+      APP_NAME: MLOps-Lifecycle
+      MODEL_NAME: distilbert-base-uncased-finetuned-sst-2-english
+      MODEL_ROOT: /app/models
+      ACTIVE_VERSION: v0.0.1
+      # MLflow opcional — dejar vacío si no usas DagsHub
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-}
+      MLFLOW_TRACKING_USERNAME: ${MLFLOW_TRACKING_USERNAME:-}
+      MLFLOW_TRACKING_PASSWORD: ${MLFLOW_TRACKING_PASSWORD:-}
+      MLFLOW_MODEL_NAME: ${MLFLOW_MODEL_NAME:-sentiment-model}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../models:/app/models    # los pesos descargados persisten aquí
+      - ../data:/app/data
+    networks:
+      - mlops-lifecycle-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s           # tiempo para descargar el modelo de HuggingFace
+
+  # ── Frontend Streamlit ─────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ..
+      dockerfile: src/frontend/Dockerfile
+    container_name: mlops-lifecycle-frontend
+    environment:
+      API_BASE_URL: http://api:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - mlops-lifecycle-net
+    restart: unless-stopped
+
+  # ── Seeder de tráfico ──────────────────────────────────────────────────────
+  # Envía ráfagas constantes a /predict con expected_label
+  # → genera métricas de accuracy reales en Prometheus por versión
+  seeder:
+    build:
+      context: ..
+      dockerfile: src/seeder/Dockerfile
+    container_name: mlops-lifecycle-seeder
+    environment:
+      API_BASE_URL: http://api:8000
+      SEEDER_CONCURRENCY: 4
+      SEEDER_SLEEP_SECONDS: 2
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - mlops-lifecycle-net
+    restart: unless-stopped
+
+  # ── Prometheus ─────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: mlops-lifecycle-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - mlops-lifecycle-net
+    restart: unless-stopped
+
+  # ── Grafana ────────────────────────────────────────────────────────────────
+  # Dashboard auto-provisionado con alertas visuales de degradación
+  grafana:
+    image: grafana/grafana:11.5.2
+    container_name: mlops-lifecycle-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - mlops-lifecycle-net
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  mlops-lifecycle-net:
+    driver: bridge

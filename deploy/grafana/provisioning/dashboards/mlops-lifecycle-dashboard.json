@@ -1,0 +1,278 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "🚨 ALERTA DE DEGRADACIÓN — v0.0.1 vs v0.0.2",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Accuracy de v0.0.1 calculada en vivo por el Seeder. Verde = OK.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "type": "range", "options": { "from": 0,    "to": 0.74, "result": { "color": "red",    "text": "⛔ MUY BAJO" } } },
+            { "type": "range", "options": { "from": 0.75, "to": 0.89, "result": { "color": "orange", "text": "⚠️ BAJO"    } } },
+            { "type": "range", "options": { "from": 0.90, "to": 1.00, "result": { "color": "green",  "text": "✅ OK"       } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "red",    "value": null },
+            { "color": "orange", "value": 0.75 },
+            { "color": "green",  "value": 0.90 }
+          ]},
+          "unit": "percentunit", "min": 0, "max": 1
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 1 },
+      "id": 101,
+      "options": {
+        "colorMode": "background", "graphMode": "none",
+        "justifyMode": "center", "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "targets": [{ "expr": "sentiment_prediction_accuracy_average{version=\"v0.0.1\"}", "legendFormat": "v0.0.1", "refId": "A" }],
+      "title": "Accuracy  v0.0.1  (Baseline)",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Accuracy de v0.0.2. Si es ROJO, el fine-tuning degradó el modelo. Vuelve a v0.0.1 desde el Frontend.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "type": "range", "options": { "from": 0,    "to": 0.74, "result": { "color": "red",    "text": "⛔ DEGRADADO" } } },
+            { "type": "range", "options": { "from": 0.75, "to": 0.89, "result": { "color": "orange", "text": "⚠️ RIESGO"    } } },
+            { "type": "range", "options": { "from": 0.90, "to": 1.00, "result": { "color": "green",  "text": "✅ OK"         } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "red",    "value": null },
+            { "color": "orange", "value": 0.75 },
+            { "color": "green",  "value": 0.90 }
+          ]},
+          "unit": "percentunit", "min": 0, "max": 1
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 1 },
+      "id": 102,
+      "options": {
+        "colorMode": "background", "graphMode": "none",
+        "justifyMode": "center", "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "targets": [{ "expr": "sentiment_prediction_accuracy_average{version=\"v0.0.2\"}", "legendFormat": "v0.0.2", "refId": "A" }],
+      "title": "Accuracy  v0.0.2  (Fine-Tuned)",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Δ = v0.0.2 − v0.0.1. Negativo = v0.0.2 está peor. ROJO = degradación confirmada → usa el Frontend para volver a v0.0.1.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 3,
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "red",    "value": null  },
+            { "color": "orange", "value": -0.05 },
+            { "color": "green",  "value": 0.0   }
+          ]},
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 1 },
+      "id": 103,
+      "options": {
+        "colorMode": "background", "graphMode": "area",
+        "justifyMode": "center", "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "targets": [{
+        "expr": "sentiment_prediction_accuracy_average{version=\"v0.0.2\"} - ignoring(version) sentiment_prediction_accuracy_average{version=\"v0.0.1\"}",
+        "legendFormat": "Δ Accuracy (v2 − v1)",
+        "refId": "A"
+      }],
+      "title": "⚡ Delta  (v0.0.2 − v0.0.1)",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Evolución temporal. Si las líneas divergen → degradación visible.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto" },
+          "min": 0, "max": 1, "unit": "percentunit",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "red", "value": null }, { "color": "green", "value": 0.80 }
+          ]}
+        },
+        "overrides": [
+          { "matcher": { "id": "byFrameRefID", "options": "A" }, "properties": [{ "id": "color", "value": { "fixedColor": "#5794F2", "mode": "fixed" } }] },
+          { "matcher": { "id": "byFrameRefID", "options": "B" }, "properties": [{ "id": "color", "value": { "fixedColor": "#F2495C", "mode": "fixed" } }] }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 8 },
+      "id": 104,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "mean", "min"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        { "expr": "sentiment_prediction_accuracy_average{version=\"v0.0.1\"}", "legendFormat": "v0.0.1 — Baseline (alta accuracy)", "refId": "A" },
+        { "expr": "sentiment_prediction_accuracy_average{version=\"v0.0.2\"}", "legendFormat": "v0.0.2 — Fine-Tuned (puede estar degradado)", "refId": "B" }
+      ],
+      "title": "📈 Accuracy en Tiempo Real por Versión",
+      "type": "timeseries"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 },
+      "id": 200,
+      "title": "📊 Métricas Operacionales",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 18 },
+      "id": 1,
+      "targets": [{ "expr": "sum by (version, label) (sentiment_predictions_total)", "legendFormat": "{{version}} — {{label}}", "refId": "A" }],
+      "title": "Predicciones por versión y etiqueta",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 18 },
+      "id": 2,
+      "targets": [{ "expr": "rate(sentiment_prediction_latency_seconds_sum[1m]) / rate(sentiment_prediction_latency_seconds_count[1m])", "legendFormat": "Latencia {{version}}", "refId": "A" }],
+      "title": "Latencia media de inferencia",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 18 },
+      "id": 3,
+      "targets": [{ "expr": "sentiment_prediction_confidence_average", "legendFormat": "Confianza {{version}}", "refId": "A" }],
+      "title": "Confianza media del modelo",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 26 },
+      "id": 4,
+      "targets": [{ "expr": "sentiment_prediction_accuracy_average", "legendFormat": "Accuracy {{version}}", "refId": "A" }],
+      "title": "Accuracy por versión (gauge)",
+      "type": "gauge"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 26 },
+      "id": 10,
+      "targets": [{ "expr": "sentiment_positive_ratio", "legendFormat": "Ratio positivo {{version}}", "refId": "A" }],
+      "title": "Ratio POSITIVE por versión",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 26 },
+      "id": 11,
+      "targets": [{ "expr": "sentiment_drift_score", "legendFormat": "Drift {{version}}", "refId": "A" }],
+      "title": "Score de Drift (|ratio − 0.5|)",
+      "type": "timeseries"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 34 },
+      "id": 300,
+      "title": "🏥 Estado del Sistema",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {
+        "color": { "mode": "thresholds" },
+        "mappings": [
+          { "type": "value", "options": { "0": { "color": "red",   "text": "⛔ DOWN" } } },
+          { "type": "value", "options": { "1": { "color": "green", "text": "✅ UP"   } } }
+        ],
+        "thresholds": { "mode": "absolute", "steps": [{"color": "red","value": null},{"color": "green","value": 1}] }
+      }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 35 },
+      "id": 6,
+      "options": { "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "up{job=\"mlops-lifecycle-api\"}", "legendFormat": "API", "refId": "A" }],
+      "title": "Estado de la API",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 35 },
+      "id": 5,
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "sum(model_version_changes_total)", "legendFormat": "Cambios", "refId": "A" }],
+      "title": "Cambios de versión (total)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 35 },
+      "id": 12,
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "rate(sentiment_predictions_total[1m])", "legendFormat": "req/s {{version}}", "refId": "A" }],
+      "title": "Tasa de peticiones /predict",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {
+        "color": { "mode": "thresholds" },
+        "thresholds": { "mode": "absolute", "steps": [{"color":"green","value":null},{"color":"orange","value":0.01},{"color":"red","value":0.05}] },
+        "unit": "reqps"
+      }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 35 },
+      "id": 13,
+      "options": { "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "rate(sentiment_prediction_errors_total[1m])", "legendFormat": "Errores/s {{version}}", "refId": "A" }],
+      "title": "Tasa de errores",
+      "type": "stat"
+    }
+
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["mlops", "fastapi", "prometheus", "grafana"],
+  "templating": { "list": [] },
+  "time": { "from": "now-15m", "to": "now" },
+  "timezone": "browser",
+  "title": "MLOps-Lifecycle Dashboard",
+  "uid": "mlops-lifecycle-dashboard",
+  "version": 2,
+  "weekStart": ""
+}
