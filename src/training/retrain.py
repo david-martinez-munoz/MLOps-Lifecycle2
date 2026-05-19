@@ -43,12 +43,12 @@ logger = logging.getLogger("retrain")
 
 # ── Configuración desde variables de entorno ────────────────────────────────
 BASE_MODEL_NAME: str = os.getenv(
-    "MODEL_NAME", "distilbert-base-uncased-finetuned-sst-2-english"
+    "MODEL_NAME", "distilbert-base-uncased"
 )
 TARGET_VERSION: str = os.getenv("TARGET_VERSION", "v0.0.2")
 MODEL_ROOT: Path = Path(os.getenv("MODEL_ROOT", "models"))
 DATA_PATH: Path = Path(os.getenv("TRAIN_DATA_PATH", "data/new_train_data.csv"))
-NUM_TRAIN_EPOCHS: int = int(os.getenv("NUM_TRAIN_EPOCHS", "1"))
+NUM_TRAIN_EPOCHS: int = int(os.getenv("NUM_TRAIN_EPOCHS", "3"))
 BATCH_SIZE: int = int(os.getenv("BATCH_SIZE", "8"))
 MAX_SEQ_LEN: int = int(os.getenv("MAX_SEQ_LEN", "128"))
 
@@ -153,23 +153,25 @@ def main() -> None:
     logger.info("Descargando modelo base desde HuggingFace...")
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_NAME)
     model = AutoModelForSequenceClassification.from_pretrained(
-        BASE_MODEL_NAME, use_safetensors=True,
-    )
+    BASE_MODEL_NAME, num_labels=2,
+)
+
 
     # 2. Preparar dataset de fine-tuning
     train_dataset = _load_dataset(tokenizer)
 
     # 3. Fine-tuning con HuggingFace Trainer — 1 época
     training_args = TrainingArguments(
-        output_dir=str(OUTPUT_DIR),
-        num_train_epochs=NUM_TRAIN_EPOCHS,
-        per_device_train_batch_size=BATCH_SIZE,
-        save_strategy="no",
-        logging_strategy="epoch",
-        report_to="none",
-        use_cpu=not torch.cuda.is_available(),
-        dataloader_num_workers=0,
-    )
+    output_dir=str(OUTPUT_DIR),
+    num_train_epochs=NUM_TRAIN_EPOCHS,
+    per_device_train_batch_size=BATCH_SIZE,
+    learning_rate=5e-4,          # ← AÑADIR ESTA LÍNEA
+    save_strategy="no",
+    logging_strategy="epoch",
+    report_to="none",
+    use_cpu=not torch.cuda.is_available(),
+    dataloader_num_workers=0,
+)
     trainer = Trainer(
         model=model,
         args=training_args,
