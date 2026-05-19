@@ -1,0 +1,124 @@
+name: CT — Continuous Training
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "data/**"
+      - "src/training/**"
+  workflow_dispatch:
+    inputs:
+      force_version:
+        description: "Versión a crear (vacío = auto)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      MODEL_NAME: distilbert-base-uncased-finetuned-sst-2-english
+      MODEL_ROOT: models
+      TRAIN_DATA_PATH: data/new_train_data.csv
+      NUM_TRAIN_EPOCHS: "1"
+      BATCH_SIZE: "8"
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: |
+          pip install --upgrade pip -q
+          pip install -r src/training/requirements.txt
+
+      - name: Calcular siguiente versión semántica
+        run: |
+          V="${{ github.event.inputs.force_version }}"
+          if [ -n "$V" ]; then
+            echo "TARGET_VERSION=$V" >> $GITHUB_ENV
+          else
+            LAST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -t. -k1V -k2n -k3n | tail -1)
+            [ -z "$LAST" ] && LAST="v0.0.0"
+            MAJ=$(echo $LAST | cut -d. -f1 | tr -d v)
+            MIN=$(echo $LAST | cut -d. -f2)
+            PAT=$(echo $LAST | cut -d. -f3)
+            NEXT="v${MAJ}.${MIN}.$((PAT+1))"
+            echo "TARGET_VERSION=$NEXT" >> $GITHUB_ENV
+            echo "Versión: $LAST → $NEXT"
+          fi
+
+      - name: Entrenar modelo (fine-tuning 1 época)
+        run: |
+          echo "Entrenando $TARGET_VERSION..."
+          python src/training/retrain.py
+
+      - name: Verificar artefactos generados
+        run: |
+          ls -lh models/$TARGET_VERSION/
+          test -f models/$TARGET_VERSION/model.safetensors || (echo "ERROR: falta model.safetensors" && exit 1)
+          test -f models/$TARGET_VERSION/config.json       || (echo "ERROR: falta config.json" && exit 1)
+          echo "✓ Artefactos OK"
+
+      - name: Publicar pesos en GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$TARGET_VERSION" \
+            --title "Model $TARGET_VERSION" \
+            --notes "DistilBERT fine-tuned — $TARGET_VERSION" \
+            --target develop \
+            || true
+          gh release upload "$TARGET_VERSION" \
+            models/$TARGET_VERSION/model.safetensors \
+            --clobber
+          echo "✓ Pesos publicados en GitHub Releases"
+
+      - name: Actualizar puntero JSON con URL de descarga
+        run: |
+          URL="https://github.com/${{ github.repository }}/releases/download/$TARGET_VERSION/model.safetensors"
+          python - << PY
+          import json, os
+          from pathlib import Path
+          v = os.environ["TARGET_VERSION"]
+          p = Path(f"models/{v}.json")
+          d = json.loads(p.read_text()) if p.exists() else {}
+          d.update({"version": v, "download_url": "$URL"})
+          p.write_text(json.dumps(d, indent=2))
+          print(f"✓ {p} → download_url actualizado")
+          PY
+
+      - name: Commit puntero JSON (sin los pesos)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add models/$TARGET_VERSION.json
+          git diff --cached --quiet && echo "Sin cambios." && exit 0
+          git commit -m "ct: $TARGET_VERSION entrenado y validado [skip ci]"
+          git push origin develop
+
+      - name: Crear tag semántico
+        run: |
+          git tag $TARGET_VERSION --force
+          git push origin $TARGET_VERSION --force
+          echo "✓ Tag $TARGET_VERSION publicado"
+
+      - name: Resumen
+        run: |
+          echo "## ✅ $TARGET_VERSION entrenado y publicado" >> $GITHUB_STEP_SUMMARY
+          echo "Pesos en GitHub Releases. La API los descarga al cambiar versión." >> $GITHUB_STEP_SUMMARY

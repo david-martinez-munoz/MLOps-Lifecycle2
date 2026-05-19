@@ -1,0 +1,62 @@
+# ─────────────────────────────────────────────────────────────
+# CI — Continuous Integration
+# Se ejecuta solo en la nube de GitHub. Tú no tocas nada.
+# Disparado en: cualquier push a develop
+# ─────────────────────────────────────────────────────────────
+name: CI — Lint & Test
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest   # máquina gratis en la nube de GitHub
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias mínimas
+        run: pip install pydantic pydantic-settings requests --quiet
+
+      - name: Validar sintaxis Python
+        run: |
+          python -m compileall src/api      -q && echo "✓ src/api"
+          python -m compileall src/wrapper  -q && echo "✓ src/wrapper"
+          python -m compileall src/seeder   -q && echo "✓ src/seeder"
+          python -m compileall src/training -q && echo "✓ src/training"
+
+      - name: Test — Wrapper SDK tiene los métodos obligatorios
+        run: |
+          python - << 'PY'
+          import sys; sys.path.insert(0, ".")
+          from src.wrapper.client import MLOpsLifecycleClient
+          needed = {"health", "predict", "change_version"}
+          found  = {m for m in dir(MLOpsLifecycleClient) if not m.startswith("_")}
+          assert needed <= found, f"Faltan: {needed - found}"
+          print("✓ Wrapper SDK correcto")
+          PY
+
+      - name: Test — Dataset de entrenamiento válido
+        run: |
+          python - << 'PY'
+          import csv
+          rows = list(csv.DictReader(open("data/new_train_data.csv")))
+          assert len(rows) >= 10
+          assert {"text","label"} <= set(rows[0])
+          print(f"✓ Dataset: {len(rows)} muestras")
+          PY
+
+      - name: Test — Dashboard Grafana es JSON válido
+        run: |
+          python - << 'PY'
+          import json
+          d = json.load(open("deploy/grafana/provisioning/dashboards/mlops-lifecycle-dashboard.json"))
+          panels = [p for p in d["panels"] if p["type"] != "row"]
+          print(f"✓ Dashboard: {len(panels)} paneles")
+          PY
