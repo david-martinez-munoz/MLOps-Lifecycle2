@@ -3,9 +3,6 @@ name: CT — Continuous Training
 on:
   push:
     branches: [develop]
-    paths:
-      - "data/**"
-      - "src/training/**"
   workflow_dispatch:
     inputs:
       force_version:
