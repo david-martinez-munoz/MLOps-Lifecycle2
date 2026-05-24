@@ -1,5 +1,0 @@
-stages:
-  validate_api:
-    cmd: python -m compileall src/api
-    deps:
-      - src/api

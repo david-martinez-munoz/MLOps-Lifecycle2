@@ -61,7 +61,7 @@ graph TB
     end
 
     subgraph "📦 Wrapper SDK"
-        WR[wrapper.py<br/>predict / version_change / health]
+        WR[client.py<br/>predict / version_change / health]
     end
 
     subgraph "⚡ API — Puerto 8000"
@@ -120,10 +120,14 @@ MLOps-Lifecycle/
 │
 ├── deploy/
 │   ├── docker-compose.yml      # Orquestación de todos los servicios
+│   ├── prometheus.yml          # Configuración de scraping Prometheus
 │   └── grafana/
 │       └── provisioning/
-│           └── dashboards/
-│               └── mlops-lifecycle-dashboard.json  # Dashboard auto-cargado
+│           ├── dashboards/
+│           │   ├── dashboard.yml                   # Configuración provisioning
+│           │   └── mlops-lifecycle-dashboard.json  # Dashboard auto-cargado
+│           └── datasources/
+│               └── datasource.yml                  # Fuente de datos Prometheus
 │
 ├── models/
 │   ├── v0.0.1.json             # Pointer → HuggingFace fallback
@@ -134,6 +138,12 @@ MLOps-Lifecycle/
 │   │   ├── main.py             # FastAPI app + lifespan + Prometheus
 │   │   ├── ml_lifecycle.py     # Carga, hot-swap y descarga de modelos
 │   │   ├── config.py           # Settings (pydantic-settings)
+│   │   ├── Dockerfile
+│   │   └── requirements.txt
+│   │
+│   ├── frontend/
+│   │   ├── ui.py               # Streamlit UI — llama al Wrapper, nunca al API directo
+│   │   ├── Dockerfile
 │   │   └── requirements.txt
 │   │
 │   ├── training/
@@ -141,10 +151,12 @@ MLOps-Lifecycle/
 │   │   └── requirements.txt
 │   │
 │   ├── wrapper/
-│   │   └── wrapper.py          # SDK: predict, version_change, health
+│   │   └── client.py           # SDK: predict, version_change, health
 │   │
 │   └── seeder/
-│       └── seeder.py           # Generador de tráfico con expected_label
+│       ├── traffic_generator.py  # Generador de tráfico con expected_label
+│       ├── Dockerfile
+│       └── requirements.txt
 │
 └── README.md
 ```
